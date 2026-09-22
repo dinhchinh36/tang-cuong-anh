@@ -10,7 +10,7 @@ IMAGE_DIR = Path(r"D:\TANGCUONGANH\val\images")
 OUTPUT_DIR = Path(__file__).resolve().parent
 CONFIDENCE = 0.5
 PALLET_WIDTH_MM = 90.0
-TOP_EDGE_KEYPOINTS = [0, 1, 4, 5, 8, 9]
+TOP_EDGE_KEYPOINTS = [0, 4, 5, 8, 9, 1]
 LEFT_CENTER_KEYPOINTS = [4, 5, 6, 7]
 RIGHT_CENTER_KEYPOINTS = [8, 9, 10, 11]
 
@@ -19,6 +19,7 @@ YELLOW = (0, 255, 255)
 RED = (0, 0, 255)
 BLUE = (255, 0, 0)
 GREEN = (0, 200, 0)
+POSE_GREEN = (0, 140, 0)
 WHITE = (255, 255, 255)
 MAGENTA = (255, 0, 255)
 
@@ -139,6 +140,17 @@ def draw_result(image, detection, predicted_centers, sample_index, center_model,
     raw_yaw = float(
         np.degrees(np.arctan2(point_right[1] - point_left[1], point_right[0] - point_left[0]))
     )
+    cv2.line(
+        image,
+        tuple(np.round(point_left).astype(int)),
+        tuple(np.round(point_right).astype(int)),
+        POSE_GREEN,
+        2,
+        cv2.LINE_AA,
+    )
+    raw_line_label_position = (point_left + point_right) / 2.0 + np.array([10.0, -10.0])
+    draw_text(image, "Pose Raw Line (0-1)", raw_line_label_position, POSE_GREEN, 0.5, 1)
+
     robust_yaw = None
     if yaw_result is not None:
         robust_yaw, slope, intercept = yaw_result
@@ -172,13 +184,16 @@ def draw_result(image, detection, predicted_centers, sample_index, center_model,
     error_l_pixels = float(np.linalg.norm(predicted_left - pose_left))
     error_l_mm = error_l_pixels * mm_per_pixel
 
-    draw_text(image, f"Pose Yaw (Raw): {raw_yaw:.2f} deg", (25, 32), GREEN)
+    delta_yaw = abs(raw_yaw - robust_yaw) if robust_yaw is not None else None
+    draw_text(image, f"Pose Yaw (0-1): {raw_yaw:.2f} deg", (25, 32), POSE_GREEN)
     robust_text = f"{robust_yaw:.2f}" if robust_yaw is not None else "N/A"
     draw_text(image, f"Robust Yaw (Linear Regression): {robust_text} deg", (25, 60), YELLOW)
-    draw_text(image, f"Error L_center (BB->LR vs Pose): {error_l_mm:.2f} mm", (25, 88), RED)
-    draw_text(image, f"BB->LR samples: {sample_count}", (25, 116), WHITE, 0.5, 1)
+    delta_text = f"{delta_yaw:.2f}" if delta_yaw is not None else "N/A"
+    draw_text(image, f"Delta Yaw: {delta_text} deg", (25, 88), WHITE)
+    draw_text(image, f"Error L_center (BB->LR vs Pose): {error_l_mm:.2f} mm", (25, 116), RED)
+    draw_text(image, f"BB->LR samples: {sample_count}", (25, 144), WHITE, 0.5, 1)
 
-    return raw_yaw, robust_yaw, error_l_mm
+    return raw_yaw, robust_yaw, delta_yaw, error_l_mm
 
 
 def main():
@@ -206,7 +221,7 @@ def main():
 
         image = result.orig_img.copy()
         predicted_centers = leave_one_out_prediction(samples, sample_index, center_model)
-        raw_yaw, robust_yaw, error_l_mm = draw_result(
+        raw_yaw, robust_yaw, delta_yaw, error_l_mm = draw_result(
             image,
             detection,
             predicted_centers,
@@ -221,6 +236,7 @@ def main():
         print(
             f"Image {image_index}: Pose Yaw (Raw)={raw_yaw:.2f} deg, "
             f"Robust Yaw (Linear Regression)={robust_yaw:.2f} deg, "
+            f"Delta Yaw={delta_yaw:.2f} deg, "
             f"Error L_center={error_l_mm:.2f} mm -> {output_path}"
         )
         saved_count += 1
