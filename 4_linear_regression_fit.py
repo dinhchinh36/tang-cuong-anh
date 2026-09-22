@@ -10,12 +10,13 @@ IMAGE_DIR = Path(r"D:\TANGCUONGANH\val\images")
 OUTPUT_DIR = Path(__file__).resolve().parent
 CONFIDENCE = 0.5
 PALLET_WIDTH_MM = 90.0
-TOP_EDGE_KEYPOINTS = [0, 4, 5, 8, 9, 1]
+TOP_EDGE_KEYPOINTS = [0, 1, 4, 5, 8, 9]
 LEFT_CENTER_KEYPOINTS = [4, 5, 6, 7]
 RIGHT_CENTER_KEYPOINTS = [8, 9, 10, 11]
 
 # OpenCV colors are BGR.
 YELLOW = (0, 255, 255)
+BASELINE = (255, 255, 0)
 RED = (0, 0, 255)
 BLUE = (255, 0, 0)
 GREEN = (0, 200, 0)
@@ -140,6 +141,25 @@ def draw_result(image, detection, predicted_centers, sample_index, center_model,
     raw_yaw = float(
         np.degrees(np.arctan2(point_right[1] - point_left[1], point_right[0] - point_left[0]))
     )
+    # The horizontal baseline is the 0-degree reference for both angle calculations.
+    baseline_start = np.array([x_min, point_left[1]], dtype=np.float32)
+    baseline_end = np.array([x_max, point_left[1]], dtype=np.float32)
+    cv2.line(
+        image,
+        tuple(np.round(baseline_start).astype(int)),
+        tuple(np.round(baseline_end).astype(int)),
+        BASELINE,
+        2,
+        cv2.LINE_AA,
+    )
+    draw_text(
+        image,
+        "Baseline (0 deg)",
+        baseline_start + np.array([8.0, -8.0]),
+        BASELINE,
+        0.5,
+        1,
+    )
     cv2.line(
         image,
         tuple(np.round(point_left).astype(int)),
@@ -148,9 +168,14 @@ def draw_result(image, detection, predicted_centers, sample_index, center_model,
         2,
         cv2.LINE_AA,
     )
-    raw_line_label_position = (point_left + point_right) / 2.0 + np.array([10.0, -10.0])
-    draw_text(image, "Pose Raw Line (0-1)", raw_line_label_position, POSE_GREEN, 0.5, 1)
-
+    draw_text(
+        image,
+        "Pose Raw Line (0-1)",
+        (point_left + point_right) / 2.0 + np.array([8.0, -10.0]),
+        POSE_GREEN,
+        0.5,
+        1,
+    )
     robust_yaw = None
     if yaw_result is not None:
         robust_yaw, slope, intercept = yaw_result
