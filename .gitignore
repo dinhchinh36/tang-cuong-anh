@@ -1,0 +1,21 @@
+.venv/
+__pycache__/
+*.py[cod]
+
+# Generated training outputs and checkpoints
+runs/
+*.pt
+*.pth
+*.onnx
+
+# Local datasets and derived data
+train/
+val/
+test/
+real_world_centers/
+samples_preview/
+
+# Local tooling and secrets
+.vscode/
+.env
+.env.*

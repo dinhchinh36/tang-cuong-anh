@@ -1,0 +1,16 @@
+train: train/images
+val: val/images
+test: ../test/images
+
+kpt_shape: [12, 3]
+flip_idx: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
+
+nc: 1
+names: ['KHUNG']
+
+roboflow:
+  workspace: le-dinh-chinh-wwvhm
+  project: pallettest39
+  version: 1
+  license: CC BY 4.0
+  url: https://universe.roboflow.com/le-dinh-chinh-wwvhm/pallettest39/dataset/1
