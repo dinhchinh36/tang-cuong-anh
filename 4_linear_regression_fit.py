@@ -10,7 +10,8 @@ IMAGE_DIR = Path(r"D:\TANGCUONGANH\val\images")
 OUTPUT_DIR = Path(__file__).resolve().parent
 CONFIDENCE = 0.5
 PALLET_WIDTH_MM = 90.0
-TOP_EDGE_KEYPOINTS = [0, 1, 4, 5, 8, 9]
+TOP_EDGE_KEYPOINTS = [0, 4, 5, 8, 9, 1]
+BOTTOM_KEYPOINTS = [2, 3]
 LEFT_CENTER_KEYPOINTS = [4, 5, 6, 7]
 RIGHT_CENTER_KEYPOINTS = [8, 9, 10, 11]
 
@@ -70,6 +71,21 @@ def fit_top_edge_yaw(keypoints):
     slope, intercept = np.polyfit(x_values, y_values, 1)
     yaw = float(np.degrees(np.arctan(slope)))
     return yaw, float(slope), float(intercept)
+
+
+def get_bottom_reference_y(keypoints, box):
+    bottom_keypoints = keypoints[BOTTOM_KEYPOINTS]
+    valid_bottom = bottom_keypoints[np.isfinite(bottom_keypoints).all(axis=1)]
+    keypoint_y = float(np.max(valid_bottom[:, 1])) if len(valid_bottom) else -np.inf
+    return float(max(keypoint_y, box[3]))
+
+
+def draw_horizontal_reference_axis(image, y_value):
+    height, width = image.shape[:2]
+    y_pixel = int(np.clip(round(y_value), 0, height - 1))
+    cv2.line(image, (0, y_pixel), (width - 1, y_pixel), BASELINE, 2, cv2.LINE_AA)
+    draw_text(image, "Horizontal Reference Line (0 deg)", (20, max(22, y_pixel - 8)), BASELINE, 0.55, 1)
+    return y_pixel
 
 
 def get_detection(result):
@@ -141,25 +157,9 @@ def draw_result(image, detection, predicted_centers, sample_index, center_model,
     raw_yaw = float(
         np.degrees(np.arctan2(point_right[1] - point_left[1], point_right[0] - point_left[0]))
     )
-    # The horizontal baseline is the 0-degree reference for both angle calculations.
-    baseline_start = np.array([x_min, point_left[1]], dtype=np.float32)
-    baseline_end = np.array([x_max, point_left[1]], dtype=np.float32)
-    cv2.line(
-        image,
-        tuple(np.round(baseline_start).astype(int)),
-        tuple(np.round(baseline_end).astype(int)),
-        BASELINE,
-        2,
-        cv2.LINE_AA,
-    )
-    draw_text(
-        image,
-        "Baseline (0 deg)",
-        baseline_start + np.array([8.0, -8.0]),
-        BASELINE,
-        0.5,
-        1,
-    )
+    # Use the lowest detected pallet coordinate as the absolute 0-degree reference.
+    bottom_y = get_bottom_reference_y(keypoints, box)
+    draw_horizontal_reference_axis(image, bottom_y)
     cv2.line(
         image,
         tuple(np.round(point_left).astype(int)),
@@ -204,10 +204,29 @@ def draw_result(image, detection, predicted_centers, sample_index, center_model,
         cv2.circle(image, point_xy, 8, color, 2, cv2.LINE_AA)
         draw_text(image, label, point_xy + np.array([10, 4]), color, 0.5, 1)
 
+    cv2.line(
+        image,
+        tuple(np.round(pose_left).astype(int)),
+        tuple(np.round(predicted_left).astype(int)),
+        RED,
+        1,
+        cv2.LINE_AA,
+    )
+    cv2.line(
+        image,
+        tuple(np.round(pose_right).astype(int)),
+        tuple(np.round(predicted_right).astype(int)),
+        BLUE,
+        1,
+        cv2.LINE_AA,
+    )
+
     pixel_width = float(np.linalg.norm(point_right - point_left))
     mm_per_pixel = PALLET_WIDTH_MM / pixel_width if pixel_width > 0.0 else 0.0
     error_l_pixels = float(np.linalg.norm(predicted_left - pose_left))
+    error_r_pixels = float(np.linalg.norm(predicted_right - pose_right))
     error_l_mm = error_l_pixels * mm_per_pixel
+    error_r_mm = error_r_pixels * mm_per_pixel
 
     delta_yaw = abs(raw_yaw - robust_yaw) if robust_yaw is not None else None
     draw_text(image, f"Pose Yaw (0-1): {raw_yaw:.2f} deg", (25, 32), POSE_GREEN)
@@ -215,10 +234,15 @@ def draw_result(image, detection, predicted_centers, sample_index, center_model,
     draw_text(image, f"Robust Yaw (Linear Regression): {robust_text} deg", (25, 60), YELLOW)
     delta_text = f"{delta_yaw:.2f}" if delta_yaw is not None else "N/A"
     draw_text(image, f"Delta Yaw: {delta_text} deg", (25, 88), WHITE)
-    draw_text(image, f"Error L_center (BB->LR vs Pose): {error_l_mm:.2f} mm", (25, 116), RED)
+    draw_text(
+        image,
+        f"Center Displacement Error: L {error_l_mm:.2f} / R {error_r_mm:.2f} mm",
+        (25, 116),
+        RED,
+    )
     draw_text(image, f"BB->LR samples: {sample_count}", (25, 144), WHITE, 0.5, 1)
 
-    return raw_yaw, robust_yaw, delta_yaw, error_l_mm
+    return raw_yaw, robust_yaw, delta_yaw, error_l_mm, error_r_mm
 
 
 def main():
@@ -246,7 +270,7 @@ def main():
 
         image = result.orig_img.copy()
         predicted_centers = leave_one_out_prediction(samples, sample_index, center_model)
-        raw_yaw, robust_yaw, delta_yaw, error_l_mm = draw_result(
+        raw_yaw, robust_yaw, delta_yaw, error_l_mm, error_r_mm = draw_result(
             image,
             detection,
             predicted_centers,
@@ -262,7 +286,7 @@ def main():
             f"Image {image_index}: Pose Yaw (Raw)={raw_yaw:.2f} deg, "
             f"Robust Yaw (Linear Regression)={robust_yaw:.2f} deg, "
             f"Delta Yaw={delta_yaw:.2f} deg, "
-            f"Error L_center={error_l_mm:.2f} mm -> {output_path}"
+            f"Center Displacement Error L/R={error_l_mm:.2f}/{error_r_mm:.2f} mm -> {output_path}"
         )
         saved_count += 1
         sample_index += 1
