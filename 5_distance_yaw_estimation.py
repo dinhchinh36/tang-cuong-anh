@@ -1,3 +1,4 @@
+import argparse
 from pathlib import Path
 
 import cv2
@@ -196,14 +197,24 @@ def draw_detection(image, box, keypoints, image_index, confidence):
 
 
 def main():
+    parser = argparse.ArgumentParser(description="Estimate pallet distance and yaw from images.")
+    parser.add_argument("--source", type=Path, default=IMAGE_DIR, help="Image file or directory.")
+    parser.add_argument(
+        "--output",
+        type=Path,
+        default=None,
+        help="Output file for a single image; batch mode writes distance_results/.",
+    )
+    args = parser.parse_args()
+
     if not MODEL_PATH.is_file():
         raise FileNotFoundError(f"Model not found: {MODEL_PATH}")
-    if not IMAGE_DIR.is_dir():
-        raise FileNotFoundError(f"Validation image directory not found: {IMAGE_DIR}")
+    if not args.source.exists():
+        raise FileNotFoundError(f"Image source not found: {args.source}")
 
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     model = YOLO(str(MODEL_PATH))
-    results = model.predict(source=str(IMAGE_DIR), conf=CONFIDENCE, verbose=False)
+    results = model.predict(source=str(args.source), conf=CONFIDENCE, verbose=False)
 
     saved_count = 0
     for image_index, result in enumerate(results):
@@ -217,7 +228,12 @@ def main():
         distance_z_mm, raw_yaw, robust_yaw, delta_yaw = draw_detection(
             image, box, keypoints, image_index, confidence
         )
-        output_path = OUTPUT_DIR / f"distance_test_{image_index}.jpg"
+        output_path = (
+            args.output
+            if args.output is not None and args.source.is_file()
+            else OUTPUT_DIR / f"distance_test_{image_index}.jpg"
+        )
+        output_path.parent.mkdir(parents=True, exist_ok=True)
         if not cv2.imwrite(str(output_path), image):
             raise OSError(f"Could not write output image: {output_path}")
 
